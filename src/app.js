@@ -191,6 +191,11 @@ const Tecnicos = {
         return tecnico ? tecnico.nombre : 'Desconocido';
     },
 
+    obtenerEspecialidad(id) {
+        const tecnico = tecnicosCache.find(t => t.id === id);
+        return tecnico ? tecnico.especialidad : 'Desconocida';
+    },
+
     renderizar() {
         const tbody = document.getElementById('tecnicosTableBody');
         
@@ -311,17 +316,19 @@ const Disponibilidades = {
         const tbody = document.getElementById('disponibilidadesTableBody');
         
         if (disponibles.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-3 text-center text-gray-500">No hay disponibilidades registradas</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-3 text-center text-gray-500">No hay disponibilidades registradas</td></tr>';
             return;
         }
 
         tbody.innerHTML = disponibles.map(disp => {
             const tecnicoNombre = Tecnicos.obtenerNombre(disp.tecnicoId);
+            const tecnicoEspecialidad = Tecnicos.obtenerEspecialidad(disp.tecnicoId);
             const fechaFormato = this.formatearFecha(disp.fecha);
             
             return `
                 <tr class="border-b hover:bg-gray-50">
                     <td class="px-4 py-3">${tecnicoNombre}</td>
+                    <td class="px-4 py-3">${tecnicoEspecialidad}</td>
                     <td class="px-4 py-3">${fechaFormato}</td>
                     <td class="px-4 py-3">${disp.hora}</td>
                     <td class="px-4 py-3">
@@ -519,8 +526,9 @@ const Reservas = {
 
         select.innerHTML += disponibles.map(d => {
             const tecnicoNombre = Tecnicos.obtenerNombre(d.tecnicoId);
+            const tecnicoEspecialidad = Tecnicos.obtenerEspecialidad(d.tecnicoId);
             const fechaFormato = this.formatearFecha(d.fecha);
-            return `<option value="${d.id}">${tecnicoNombre} - ${fechaFormato} ${d.hora}</option>`;
+            return `<option value="${d.id}">${tecnicoNombre} (${tecnicoEspecialidad}) - ${fechaFormato} ${d.hora}</option>`;
         }).join('');
     },
 
