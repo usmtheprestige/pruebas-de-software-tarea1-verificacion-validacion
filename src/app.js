@@ -378,10 +378,10 @@ const Tecnicos = {
 
     actualizarSelect() {
         const selectReserva = document.getElementById('reservaTecnico');
-        const selectCrear = document.getElementById('tecnicoCrearReserva');
+        const selectPublicar = document.getElementById('tecnicoPublicarHorario');
         
         let valorReserva = '';
-        let valorCrear = '';
+        let valorPublicar = '';
         
         if (selectReserva) {
             valorReserva = selectReserva.value;
@@ -390,11 +390,11 @@ const Tecnicos = {
             selectReserva.value = valorReserva;
         }
         
-        if (selectCrear) {
-            valorCrear = selectCrear.value;
-            selectCrear.innerHTML = '<option value="">Seleccionar técnico</option>';
-            selectCrear.innerHTML += tecnicosCache.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
-            selectCrear.value = valorCrear;
+        if (selectPublicar) {
+            valorPublicar = selectPublicar.value;
+            selectPublicar.innerHTML = '<option value="">Seleccionar técnico</option>';
+            selectPublicar.innerHTML += tecnicosCache.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
+            selectPublicar.value = valorPublicar;
         }
     }
 };
@@ -403,7 +403,7 @@ const Tecnicos = {
 // FUNCIONES DE RESERVAS
 // ============================================================
 const Reservas = {
-    async crearDisponible(tecnicoId, fecha, hora, descripcion) {
+    async crearDisponible(tecnicoId, fecha, hora) {
         // Validar técnico
         if (!tecnicoId) {
             Alert.error('Debe seleccionar un técnico');
@@ -431,13 +431,6 @@ const Reservas = {
             return false;
         }
 
-        // Validar descripción
-        validacion = Validaciones.validarDescripcion(descripcion);
-        if (!validacion.valido) {
-            Alert.error(validacion.mensaje);
-            return false;
-        }
-
         // Validar no haya conflicto de técnico
         validacion = Validaciones.validarSinConflictoDeTecnico(tecnicoId, fecha, hora, reservasCache);
         if (!validacion.valido) {
@@ -450,23 +443,22 @@ const Reservas = {
                 tecnicoId,
                 fecha,
                 hora,
-                descripcion: descripcion.trim(),
                 estado: 'disponible',
                 fechaCreacion: new Date()
             });
-            Alert.success('Reserva disponible creada correctamente');
+            Alert.success('Horario publicado correctamente');
             await this.cargar();
             this.renderizarDisponibles();
             Reservas.renderizarFormulario();
             return true;
         } catch (error) {
-            console.error('Error al crear reserva:', error);
-            Alert.error('Error al crear reserva');
+            console.error('Error al publicar horario:', error);
+            Alert.error('Error al publicar horario');
             return false;
         }
     },
 
-    async tomarDisponible(reservaId, clienteId) {
+    async tomarDisponible(reservaId, clienteId, descripcion) {
         // Validar cliente y reserva requeridos
         if (!clienteId) {
             Alert.error('Debe seleccionar un cliente');
@@ -474,24 +466,31 @@ const Reservas = {
         }
 
         if (!reservaId) {
-            Alert.error('Debe seleccionar una reserva disponible');
+            Alert.error('Debe seleccionar un horario disponible');
+            return false;
+        }
+
+        // Validar descripción
+        let validacion = Validaciones.validarDescripcion(descripcion);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
             return false;
         }
 
         // Obtener reserva
         const reserva = reservasCache.find(r => r.id === reservaId);
         if (!reserva) {
-            Alert.error('Reserva no encontrada');
+            Alert.error('Horario no encontrado');
             return false;
         }
 
         if (reserva.estado !== 'disponible') {
-            Alert.error('La reserva ya no está disponible');
+            Alert.error('El horario ya no está disponible');
             return false;
         }
 
         // Validar cliente no tiene otra reserva activa en mismo horario
-        const validacion = Validaciones.validarSinConflictoDeCliente(clienteId, reserva.fecha, reserva.hora, reservasCache);
+        validacion = Validaciones.validarSinConflictoDeCliente(clienteId, reserva.fecha, reserva.hora, reservasCache);
         if (!validacion.valido) {
             Alert.error(validacion.mensaje);
             return false;
@@ -500,18 +499,19 @@ const Reservas = {
         try {
             await updateDoc(doc(db, 'reservas', reservaId), {
                 clienteId,
+                descripcion: descripcion.trim(),
                 estado: 'activa'
             });
 
-            Alert.success('Reserva tomada correctamente');
+            Alert.success('Servicio reservado correctamente');
             await this.cargar();
             this.renderizarFuturas();
             this.renderizarDisponibles();
             this.renderizarFormulario();
             return true;
         } catch (error) {
-            console.error('Error al tomar reserva:', error);
-            Alert.error('Error al tomar reserva');
+            console.error('Error al reservar servicio:', error);
+            Alert.error('Error al reservar servicio');
             return false;
         }
     },
@@ -591,7 +591,7 @@ const Reservas = {
         const tbody = document.getElementById('disponiblesTableBody');
         
         if (disponibles.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-3 text-center text-gray-500">No hay reservas disponibles</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-3 text-center text-gray-500">No hay horarios publicados</td></tr>';
             return;
         }
 
@@ -606,7 +606,6 @@ const Reservas = {
                     <td class="px-4 py-3">${tecnicoEspecialidad}</td>
                     <td class="px-4 py-3">${fechaFormato}</td>
                     <td class="px-4 py-3">${reserva.hora}</td>
-                    <td class="px-4 py-3 max-w-xs truncate">${reserva.descripcion}</td>
                 </tr>
             `;
         }).join('');
@@ -654,10 +653,10 @@ const Reservas = {
         
         if (!select) return;
         
-        select.innerHTML = '<option value="">Seleccionar reserva</option>';
+        select.innerHTML = '<option value="">Seleccionar horario</option>';
         
         if (disponibles.length === 0) {
-            select.innerHTML += '<option disabled>No hay reservas disponibles</option>';
+            select.innerHTML += '<option disabled>No hay horarios disponibles</option>';
             return;
         }
 
@@ -698,7 +697,7 @@ function mostrarTab(tabName) {
         Reservas.renderizarFuturas();
     } else if (tabName === 'reservar') {
         Reservas.renderizarFormulario();
-    } else if (tabName === 'crear') {
+    } else if (tabName === 'publicar') {
         Reservas.renderizarDisponibles();
     }
 }
@@ -746,16 +745,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
-        // Form de creación de reservas disponibles (técnicos)
-        document.getElementById('crearReservaForm').addEventListener('submit', async (e) => {
+        // Form de creación de horarios disponibles (técnicos)
+        document.getElementById('publicarHorarioForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const tecnicoId = document.getElementById('tecnicoCrearReserva').value;
-            const fecha = document.getElementById('crearReservaFecha').value;
-            const hora = document.getElementById('crearReservaHora').value;
-            const descripcion = document.getElementById('crearReservaDescripcion').value;
+            const tecnicoId = document.getElementById('tecnicoPublicarHorario').value;
+            const fecha = document.getElementById('publicarHorarioFecha').value;
+            const hora = document.getElementById('publicarHorarioHora').value;
             
-            if (await Reservas.crearDisponible(tecnicoId, fecha, hora, descripcion)) {
-                document.getElementById('crearReservaForm').reset();
+            if (await Reservas.crearDisponible(tecnicoId, fecha, hora)) {
+                document.getElementById('publicarHorarioForm').reset();
             }
         });
 
@@ -764,8 +762,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const clienteId = document.getElementById('tomarReservaCliente').value;
             const reservaId = document.getElementById('reservaDisponible').value;
+            const descripcion = document.getElementById('tomarReservaDescripcion').value;
             
-            if (await Reservas.tomarDisponible(reservaId, clienteId)) {
+            if (await Reservas.tomarDisponible(reservaId, clienteId, descripcion)) {
                 document.getElementById('tomarReservaForm').reset();
             }
         });
