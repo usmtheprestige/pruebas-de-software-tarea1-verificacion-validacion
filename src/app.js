@@ -1,7 +1,5 @@
 import { 
     db, 
-    //collection, 
-    //addDoc, 
     getDocs, 
     query, 
     where, 
@@ -36,10 +34,142 @@ const Alert = {
     }
 };
 
+// ============================================================
+// VALIDACIONES CENTRALIZADAS
+// ============================================================
+const Validaciones = {
+    validarNombreBasico(nombre) {
+        if (!nombre || !nombre.trim()) {
+            return { valido: false, mensaje: 'El nombre es obligatorio y no puede estar vacío' };
+        }
+        if (nombre.trim().length < 2) {
+            return { valido: false, mensaje: 'El nombre debe tener al menos 2 caracteres' };
+        }
+        return { valido: true };
+    },
+
+    validarTelefono(telefono) {
+        if (!telefono || !telefono.trim()) {
+            return { valido: false, mensaje: 'El teléfono es obligatorio' };
+        }
+        
+        const telefonoLimpio = telefono.trim();
+        
+        // Validar que solo contenga números (y opcionalmente + al inicio)
+        if (!/^\+?[0-9]+$/.test(telefonoLimpio)) {
+            return { valido: false, mensaje: 'El teléfono solo puede contener números' };
+        }
+        
+        // Validar largo (8-12 dígitos)
+        const soloNumeros = telefonoLimpio.replace(/\D/g, '');
+        if (soloNumeros.length < 8 || soloNumeros.length > 12) {
+            return { valido: false, mensaje: 'El teléfono debe tener entre 8 y 12 dígitos' };
+        }
+        
+        return { valido: true };
+    },
+
+    validarEmail(email) {
+        if (!email || !email.trim()) {
+            return { valido: false, mensaje: 'El correo es obligatorio' };
+        }
+        
+        const correoLimpio = email.trim();
+        
+        // Validar formato de email (debe contener @ y un dominio válido)
+        const regexEmail = /^[^\s@]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        if (!regexEmail.test(correoLimpio)) {
+            return { valido: false, mensaje: 'El correo debe tener un formato válido (ej: usuario@dominio.com)' };
+        }
+        
+        return { valido: true };
+    },
+
+    validarEspecialidad(especialidad) {
+        if (!especialidad || !especialidad.trim()) {
+            return { valido: false, mensaje: 'La especialidad es obligatoria' };
+        }
+        return { valido: true };
+    },
+
+    validarDescripcion(descripcion) {
+        if (!descripcion || !descripcion.trim()) {
+            return { valido: false, mensaje: 'La descripción del problema es obligatoria' };
+        }
+        if (descripcion.trim().length < 5) {
+            return { valido: false, mensaje: 'La descripción debe tener al menos 5 caracteres' };
+        }
+        return { valido: true };
+    },
+
+    validarFechaFutura(fechaStr, horaStr) {
+        if (!fechaStr || !horaStr) {
+            return { valido: false, mensaje: 'La fecha y hora son obligatorias' };
+        }
+        
+        const fechaReserva = new Date(`${fechaStr}T${horaStr}`);
+        const ahora = new Date();
+        
+        // Agregar un pequeño margen (1 minuto) para evitar problemas de timezone
+        ahora.setMinutes(ahora.getMinutes() + 1);
+        
+        if (fechaReserva <= ahora) {
+            return { valido: false, mensaje: 'La fecha y hora deben ser futuras' };
+        }
+        
+        return { valido: true };
+    },
+
+    validarFecha(fechaStr) {
+        if (!fechaStr) {
+            return { valido: false, mensaje: 'La fecha es obligatoria' };
+        }
+        return { valido: true };
+    },
+
+    validarHora(horaStr) {
+        if (!horaStr) {
+            return { valido: false, mensaje: 'La hora es obligatoria' };
+        }
+        return { valido: true };
+    },
+
+    validarSinConflictoDeTecnico(tecnicoId, fecha, hora, reservasExistentes, excludeReservaId = null) {
+        const conflicto = reservasExistentes.some(r => 
+            r.tecnicoId === tecnicoId && 
+            r.fecha === fecha && 
+            r.hora === hora &&
+            r.estado === 'disponible' &&
+            r.id !== excludeReservaId
+        );
+        
+        if (conflicto) {
+            return { valido: false, mensaje: 'El técnico ya tiene una reserva disponible en esa fecha y hora' };
+        }
+        
+        return { valido: true };
+    },
+
+    validarSinConflictoDeCliente(clienteId, fecha, hora, reservasExistentes, excludeReservaId = null) {
+        const conflicto = reservasExistentes.some(r => 
+            r.clienteId === clienteId && 
+            r.fecha === fecha && 
+            r.hora === hora && 
+            r.estado === 'activa' &&
+            r.id !== excludeReservaId
+        );
+        
+        if (conflicto) {
+            return { valido: false, mensaje: 'Ya tienes una reserva activa en ese horario' };
+        }
+        
+        return { valido: true };
+    }
+};
+
 // Cache en memoria para optimizar
 let clientesCache = [];
 let tecnicosCache = [];
-let disponibilidadesCache = [];
 let reservasCache = [];
 
 // ============================================================
@@ -47,13 +177,24 @@ let reservasCache = [];
 // ============================================================
 const Clientes = {
     async agregar(nombre, telefono, correo) {
-        // Validación
-        if (!nombre.trim() || !telefono.trim() || !correo.trim()) {
-            Alert.error('Todos los campos del cliente son obligatorios');
+        // Validar nombre
+        let validacion = Validaciones.validarNombreBasico(nombre);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
             return false;
         }
-        if (!this.validarEmail(correo)) {
-            Alert.error('El correo no es válido');
+
+        // Validar teléfono
+        validacion = Validaciones.validarTelefono(telefono);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
+            return false;
+        }
+
+        // Validar correo
+        validacion = Validaciones.validarEmail(correo);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
             return false;
         }
 
@@ -70,7 +211,7 @@ const Clientes = {
                 telefono: telefono.trim(),
                 correo: correo.trim()
             });
-            Alert.success(`Cliente "${nombre}" registrado correctamente`);
+            Alert.success(`Cliente "${nombre.trim()}" registrado correctamente`);
             await this.cargar();
             this.renderizar();
             this.actualizarSelect();
@@ -80,11 +221,6 @@ const Clientes = {
             Alert.error('Error al registrar cliente');
             return false;
         }
-    },
-
-    validarEmail(email) {
-        const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return regex.test(email);
     },
 
     async buscarPorCorreo(correo) {
@@ -134,12 +270,25 @@ const Clientes = {
     },
 
     actualizarSelect() {
-        const select = document.getElementById('reservaCliente');
-        const valor = select.value;
+        const selectReserva = document.getElementById('reservaCliente');
+        const selectTomar = document.getElementById('tomarReservaCliente');
         
-        select.innerHTML = '<option value="">Seleccionar cliente</option>';
-        select.innerHTML += clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-        select.value = valor;
+        let valorReserva = '';
+        let valorTomar = '';
+        
+        if (selectReserva) {
+            valorReserva = selectReserva.value;
+            selectReserva.innerHTML = '<option value="">Seleccionar cliente</option>';
+            selectReserva.innerHTML += clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+            selectReserva.value = valorReserva;
+        }
+        
+        if (selectTomar) {
+            valorTomar = selectTomar.value;
+            selectTomar.innerHTML = '<option value="">Seleccionar cliente</option>';
+            selectTomar.innerHTML += clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+            selectTomar.value = valorTomar;
+        }
     }
 };
 
@@ -148,9 +297,24 @@ const Clientes = {
 // ============================================================
 const Tecnicos = {
     async agregar(nombre, especialidad, telefono) {
-        // Validación
-        if (!nombre.trim() || !especialidad || !telefono.trim()) {
-            Alert.error('Todos los campos del técnico son obligatorios');
+        // Validar nombre
+        let validacion = Validaciones.validarNombreBasico(nombre);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
+            return false;
+        }
+
+        // Validar especialidad
+        validacion = Validaciones.validarEspecialidad(especialidad);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
+            return false;
+        }
+
+        // Validar teléfono
+        validacion = Validaciones.validarTelefono(telefono);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
             return false;
         }
 
@@ -160,11 +324,10 @@ const Tecnicos = {
                 especialidad,
                 telefono: telefono.trim()
             });
-            Alert.success(`Técnico "${nombre}" registrado correctamente`);
+            Alert.success(`Técnico "${nombre.trim()}" registrado correctamente`);
             await this.cargar();
             this.renderizar();
             this.actualizarSelect();
-            this.actualizarSelectDisponibilidad();
             return true;
         } catch (error) {
             console.error('Error al agregar técnico:', error);
@@ -214,137 +377,25 @@ const Tecnicos = {
     },
 
     actualizarSelect() {
-        const select = document.getElementById('reservaTecnico');
-        if (!select) return;
-        const valor = select.value;
+        const selectReserva = document.getElementById('reservaTecnico');
+        const selectCrear = document.getElementById('tecnicoCrearReserva');
         
-        select.innerHTML = '<option value="">Seleccionar técnico</option>';
-        select.innerHTML += tecnicosCache.map(t => `<option value="${t.id}">${t.nombre} (${t.especialidad})</option>`).join('');
-        select.value = valor;
-    },
-
-    actualizarSelectDisponibilidad() {
-        const select = document.getElementById('tecnicoDisponibilidad');
-        if (!select) return;
-        const valor = select.value;
+        let valorReserva = '';
+        let valorCrear = '';
         
-        select.innerHTML = '<option value="">Seleccionar técnico</option>';
-        select.innerHTML += tecnicosCache.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
-        select.value = valor;
-    }
-};
-
-// ============================================================
-// FUNCIONES DE DISPONIBILIDADES
-// ============================================================
-const Disponibilidades = {
-    async agregar(tecnicoId, fecha, hora) {
-        // Validación
-        if (!tecnicoId || !fecha || !hora) {
-            Alert.error('Todos los campos son obligatorios');
-            return false;
+        if (selectReserva) {
+            valorReserva = selectReserva.value;
+            selectReserva.innerHTML = '<option value="">Seleccionar técnico</option>';
+            selectReserva.innerHTML += tecnicosCache.map(t => `<option value="${t.id}">${t.nombre} (${t.especialidad})</option>`).join('');
+            selectReserva.value = valorReserva;
         }
-
-        // Validar fecha/hora futura
-        const fechaDisp = new Date(`${fecha}T${hora}`);
-        const ahora = new Date();
-        if (fechaDisp <= ahora) {
-            Alert.error('La disponibilidad debe ser en fecha y hora futura');
-            return false;
-        }
-
-        // Validar no haya conflicto (no permitir dos disponibilidades en mismo horario)
-        const conflicto = disponibilidadesCache.some(d => 
-            d.tecnicoId === tecnicoId && 
-            d.fecha === fecha && 
-            d.hora === hora
-        );
-        if (conflicto) {
-            Alert.error('El técnico ya tiene una disponibilidad en esa fecha y hora');
-            return false;
-        }
-
-        try {
-            await addDoc(collection(db, 'disponibilidades'), {
-                tecnicoId,
-                fecha,
-                hora,
-                estado: 'disponible',
-                fechaCreacion: new Date()
-            });
-            Alert.success('Disponibilidad creada correctamente');
-            await this.cargar();
-            this.renderizar();
-            return true;
-        } catch (error) {
-            console.error('Error al agregar disponibilidad:', error);
-            Alert.error('Error al crear disponibilidad');
-            return false;
-        }
-    },
-
-    async cargar() {
-        try {
-            const snapshot = await getDocs(collection(db, 'disponibilidades'));
-            disponibilidadesCache = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-        } catch (error) {
-            console.error('Error al cargar disponibilidades:', error);
-            disponibilidadesCache = [];
-        }
-    },
-
-    obtenerDisponibles() {
-        const ahora = new Date();
-        return disponibilidadesCache
-            .filter(d => {
-                if (d.estado !== 'disponible') return false;
-                const fechaDisp = new Date(`${d.fecha}T${d.hora}`);
-                return fechaDisp > ahora;
-            })
-            .sort((a, b) => {
-                const fechaA = new Date(`${a.fecha}T${a.hora}`);
-                const fechaB = new Date(`${b.fecha}T${b.hora}`);
-                return fechaA - fechaB;
-            });
-    },
-
-    renderizar() {
-        const disponibles = this.obtenerDisponibles();
-        const tbody = document.getElementById('disponibilidadesTableBody');
         
-        if (disponibles.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-3 text-center text-gray-500">No hay disponibilidades registradas</td></tr>';
-            return;
+        if (selectCrear) {
+            valorCrear = selectCrear.value;
+            selectCrear.innerHTML = '<option value="">Seleccionar técnico</option>';
+            selectCrear.innerHTML += tecnicosCache.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
+            selectCrear.value = valorCrear;
         }
-
-        tbody.innerHTML = disponibles.map(disp => {
-            const tecnicoNombre = Tecnicos.obtenerNombre(disp.tecnicoId);
-            const tecnicoEspecialidad = Tecnicos.obtenerEspecialidad(disp.tecnicoId);
-            const fechaFormato = this.formatearFecha(disp.fecha);
-            
-            return `
-                <tr class="border-b hover:bg-gray-50">
-                    <td class="px-4 py-3">${tecnicoNombre}</td>
-                    <td class="px-4 py-3">${tecnicoEspecialidad}</td>
-                    <td class="px-4 py-3">${fechaFormato}</td>
-                    <td class="px-4 py-3">${disp.hora}</td>
-                    <td class="px-4 py-3">
-                        <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-semibold">
-                            ${disp.estado}
-                        </span>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-    },
-
-    formatearFecha(fecha) {
-        const date = new Date(`${fecha}T00:00:00`);
-        const opciones = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
-        return date.toLocaleDateString('es-ES', opciones);
     }
 };
 
@@ -352,64 +403,115 @@ const Disponibilidades = {
 // FUNCIONES DE RESERVAS
 // ============================================================
 const Reservas = {
-    async crearDesdeDisponibilidad(clienteId, disponibilidadId, descripcion) {
-        // Validación
-        if (!clienteId || !disponibilidadId || !descripcion.trim()) {
-            Alert.error('Todos los campos son obligatorios');
+    async crearDisponible(tecnicoId, fecha, hora, descripcion) {
+        // Validar técnico
+        if (!tecnicoId) {
+            Alert.error('Debe seleccionar un técnico');
             return false;
         }
 
-        // Obtener disponibilidad
-        const disponibilidad = disponibilidadesCache.find(d => d.id === disponibilidadId);
-        if (!disponibilidad) {
-            Alert.error('Disponibilidad no encontrada');
+        // Validar fecha
+        let validacion = Validaciones.validarFecha(fecha);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
             return false;
         }
 
-        if (disponibilidad.estado !== 'disponible') {
-            Alert.error('La disponibilidad ya está reservada');
+        // Validar hora
+        validacion = Validaciones.validarHora(hora);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
             return false;
         }
 
-        // Validar cliente no tiene otra reserva en mismo horario
-        const conflicto = reservasCache.some(r => 
-            r.clienteId === clienteId && 
-            r.fecha === disponibilidad.fecha && 
-            r.hora === disponibilidad.hora && 
-            r.estado === 'activa'
-        );
-        if (conflicto) {
-            Alert.error('Ya tienes una reserva en ese horario');
+        // Validar fecha/hora futura
+        validacion = Validaciones.validarFechaFutura(fecha, hora);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
+            return false;
+        }
+
+        // Validar descripción
+        validacion = Validaciones.validarDescripcion(descripcion);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
+            return false;
+        }
+
+        // Validar no haya conflicto de técnico
+        validacion = Validaciones.validarSinConflictoDeTecnico(tecnicoId, fecha, hora, reservasCache);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
             return false;
         }
 
         try {
-            // Crear reserva
             await addDoc(collection(db, 'reservas'), {
-                clienteId,
-                tecnicoId: disponibilidad.tecnicoId,
-                fecha: disponibilidad.fecha,
-                hora: disponibilidad.hora,
+                tecnicoId,
+                fecha,
+                hora,
                 descripcion: descripcion.trim(),
-                estado: 'activa',
-                disponibilidadId,
+                estado: 'disponible',
                 fechaCreacion: new Date()
             });
-
-            // Actualizar disponibilidad a reservada
-            await updateDoc(doc(db, 'disponibilidades', disponibilidadId), {
-                estado: 'reservado'
-            });
-
-            Alert.success('Reserva creada correctamente');
+            Alert.success('Reserva disponible creada correctamente');
             await this.cargar();
-            await Disponibilidades.cargar();
-            this.renderizarFuturas();
-            Disponibilidades.renderizar();
+            this.renderizarDisponibles();
+            Reservas.renderizarFormulario();
             return true;
         } catch (error) {
             console.error('Error al crear reserva:', error);
             Alert.error('Error al crear reserva');
+            return false;
+        }
+    },
+
+    async tomarDisponible(reservaId, clienteId) {
+        // Validar cliente y reserva requeridos
+        if (!clienteId) {
+            Alert.error('Debe seleccionar un cliente');
+            return false;
+        }
+
+        if (!reservaId) {
+            Alert.error('Debe seleccionar una reserva disponible');
+            return false;
+        }
+
+        // Obtener reserva
+        const reserva = reservasCache.find(r => r.id === reservaId);
+        if (!reserva) {
+            Alert.error('Reserva no encontrada');
+            return false;
+        }
+
+        if (reserva.estado !== 'disponible') {
+            Alert.error('La reserva ya no está disponible');
+            return false;
+        }
+
+        // Validar cliente no tiene otra reserva activa en mismo horario
+        const validacion = Validaciones.validarSinConflictoDeCliente(clienteId, reserva.fecha, reserva.hora, reservasCache);
+        if (!validacion.valido) {
+            Alert.error(validacion.mensaje);
+            return false;
+        }
+
+        try {
+            await updateDoc(doc(db, 'reservas', reservaId), {
+                clienteId,
+                estado: 'activa'
+            });
+
+            Alert.success('Reserva tomada correctamente');
+            await this.cargar();
+            this.renderizarFuturas();
+            this.renderizarDisponibles();
+            this.renderizarFormulario();
+            return true;
+        } catch (error) {
+            console.error('Error al tomar reserva:', error);
+            Alert.error('Error al tomar reserva');
             return false;
         }
     },
@@ -422,23 +524,17 @@ const Reservas = {
                 return false;
             }
 
-            // Actualizar reserva a cancelada
+            // Actualizar reserva a disponible (vuelve a estar disponible)
             await updateDoc(doc(db, 'reservas', reservaId), {
-                estado: 'cancelada'
+                estado: 'disponible',
+                clienteId: null
             });
-
-            // Si existe disponibilidad asociada, volver a disponible
-            if (reserva.disponibilidadId) {
-                await updateDoc(doc(db, 'disponibilidades', reserva.disponibilidadId), {
-                    estado: 'disponible'
-                });
-            }
 
             Alert.success('Reserva cancelada correctamente');
             await this.cargar();
-            await Disponibilidades.cargar();
             this.renderizarFuturas();
-            Disponibilidades.renderizar();
+            this.renderizarDisponibles();
+            this.renderizarFormulario();
             return true;
         } catch (error) {
             console.error('Error al cancelar reserva:', error);
@@ -460,6 +556,21 @@ const Reservas = {
         }
     },
 
+    obtenerDisponibles() {
+        const ahora = new Date();
+        return reservasCache
+            .filter(r => {
+                if (r.estado !== 'disponible') return false;
+                const fechaReserva = new Date(`${r.fecha}T${r.hora}`);
+                return fechaReserva > ahora;
+            })
+            .sort((a, b) => {
+                const fechaA = new Date(`${a.fecha}T${a.hora}`);
+                const fechaB = new Date(`${b.fecha}T${b.hora}`);
+                return fechaA - fechaB;
+            });
+    },
+
     obtenerFuturas() {
         const ahora = new Date();
         return reservasCache
@@ -473,6 +584,32 @@ const Reservas = {
                 const fechaB = new Date(`${b.fecha}T${b.hora}`);
                 return fechaA - fechaB;
             });
+    },
+
+    renderizarDisponibles() {
+        const disponibles = this.obtenerDisponibles();
+        const tbody = document.getElementById('disponiblesTableBody');
+        
+        if (disponibles.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-3 text-center text-gray-500">No hay reservas disponibles</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = disponibles.map(reserva => {
+            const tecnicoNombre = Tecnicos.obtenerNombre(reserva.tecnicoId);
+            const tecnicoEspecialidad = Tecnicos.obtenerEspecialidad(reserva.tecnicoId);
+            const fechaFormato = this.formatearFecha(reserva.fecha);
+            
+            return `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="px-4 py-3">${tecnicoNombre}</td>
+                    <td class="px-4 py-3">${tecnicoEspecialidad}</td>
+                    <td class="px-4 py-3">${fechaFormato}</td>
+                    <td class="px-4 py-3">${reserva.hora}</td>
+                    <td class="px-4 py-3 max-w-xs truncate">${reserva.descripcion}</td>
+                </tr>
+            `;
+        }).join('');
     },
 
     renderizarFuturas() {
@@ -512,23 +649,23 @@ const Reservas = {
     },
 
     renderizarFormulario() {
-        const disponibles = Disponibilidades.obtenerDisponibles();
-        const select = document.getElementById('disponibilidadReserva');
+        const disponibles = this.obtenerDisponibles();
+        const select = document.getElementById('reservaDisponible');
         
         if (!select) return;
         
-        select.innerHTML = '<option value="">Seleccionar disponibilidad</option>';
+        select.innerHTML = '<option value="">Seleccionar reserva</option>';
         
         if (disponibles.length === 0) {
-            select.innerHTML += '<option disabled>No hay disponibilidades</option>';
+            select.innerHTML += '<option disabled>No hay reservas disponibles</option>';
             return;
         }
 
-        select.innerHTML += disponibles.map(d => {
-            const tecnicoNombre = Tecnicos.obtenerNombre(d.tecnicoId);
-            const tecnicoEspecialidad = Tecnicos.obtenerEspecialidad(d.tecnicoId);
-            const fechaFormato = this.formatearFecha(d.fecha);
-            return `<option value="${d.id}">${tecnicoNombre} (${tecnicoEspecialidad}) - ${fechaFormato} ${d.hora}</option>`;
+        select.innerHTML += disponibles.map(r => {
+            const tecnicoNombre = Tecnicos.obtenerNombre(r.tecnicoId);
+            const tecnicoEspecialidad = Tecnicos.obtenerEspecialidad(r.tecnicoId);
+            const fechaFormato = this.formatearFecha(r.fecha);
+            return `<option value="${r.id}">${tecnicoNombre} (${tecnicoEspecialidad}) - ${fechaFormato} ${r.hora}</option>`;
         }).join('');
     },
 
@@ -561,6 +698,8 @@ function mostrarTab(tabName) {
         Reservas.renderizarFuturas();
     } else if (tabName === 'reservar') {
         Reservas.renderizarFormulario();
+    } else if (tabName === 'crear') {
+        Reservas.renderizarDisponibles();
     }
 }
 
@@ -572,16 +711,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Cargar datos de Firestore
         await Clientes.cargar();
         await Tecnicos.cargar();
-        await Disponibilidades.cargar();
         await Reservas.cargar();
 
         // Renderizar interfaz
         Clientes.renderizar();
         Tecnicos.renderizar();
-        Disponibilidades.renderizar();
+        Reservas.renderizarDisponibles();
         Clientes.actualizarSelect();
         Tecnicos.actualizarSelect();
-        Tecnicos.actualizarSelectDisponibilidad();
         Reservas.renderizarFuturas();
         Reservas.renderizarFormulario();
 
@@ -609,27 +746,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
-        // Form de disponibilidades
-        document.getElementById('disponibilidadForm').addEventListener('submit', async (e) => {
+        // Form de creación de reservas disponibles (técnicos)
+        document.getElementById('crearReservaForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const tecnicoId = document.getElementById('tecnicoDisponibilidad').value;
-            const fecha = document.getElementById('disponibilidadFecha').value;
-            const hora = document.getElementById('disponibilidadHora').value;
+            const tecnicoId = document.getElementById('tecnicoCrearReserva').value;
+            const fecha = document.getElementById('crearReservaFecha').value;
+            const hora = document.getElementById('crearReservaHora').value;
+            const descripcion = document.getElementById('crearReservaDescripcion').value;
             
-            if (await Disponibilidades.agregar(tecnicoId, fecha, hora)) {
-                document.getElementById('disponibilidadForm').reset();
+            if (await Reservas.crearDisponible(tecnicoId, fecha, hora, descripcion)) {
+                document.getElementById('crearReservaForm').reset();
             }
         });
 
-        // Form de reservas
-        document.getElementById('reservaForm').addEventListener('submit', async (e) => {
+        // Form de toma de reservas (clientes)
+        document.getElementById('tomarReservaForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const clienteId = document.getElementById('reservaCliente').value;
-            const disponibilidadId = document.getElementById('disponibilidadReserva').value;
-            const descripcion = document.getElementById('reservaDescripcion').value;
+            const clienteId = document.getElementById('tomarReservaCliente').value;
+            const reservaId = document.getElementById('reservaDisponible').value;
             
-            if (await Reservas.crearDesdeDisponibilidad(clienteId, disponibilidadId, descripcion)) {
-                document.getElementById('reservaForm').reset();
+            if (await Reservas.tomarDisponible(reservaId, clienteId)) {
+                document.getElementById('tomarReservaForm').reset();
             }
         });
 
